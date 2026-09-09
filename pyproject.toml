@@ -1,7 +1,34 @@
 [project]
 name = "engineer2-me"
 version = "0.1.0"
-description = "Add your description here"
+description = "A queryable engineering knowledge graph for agents: facts, calculators, calculations, CAD models and evaluations."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "python-fasthtml>=0.12",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    "markdown-it-py>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.uv]
+package = false

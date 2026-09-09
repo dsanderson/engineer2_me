@@ -1,0 +1,21 @@
+# One variable switches between laptop and server:
+#   E2_SITE_ADDRESS=localhost              → Caddy's own internal cert (or use http://localhost)
+#   E2_SITE_ADDRESS=engineer2.example.com  → automatic Let's Encrypt
+{$E2_SITE_ADDRESS:localhost} {
+	basic_auth {
+		{$E2_USER:agent} {$E2_PASSWORD_HASH}
+	}
+
+	reverse_proxy app:8000 {
+		# verification can take a while; do not cut a run off mid-flight
+		transport http {
+			response_header_timeout 300s
+		}
+	}
+
+	encode gzip
+	log {
+		output stdout
+		format console
+	}
+}
