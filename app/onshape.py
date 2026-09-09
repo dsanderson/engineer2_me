@@ -136,9 +136,21 @@ class OnshapeClient:
 
     async def _get(self, url: str) -> Any:
         async with self._client() as client:
-            resp = await client.get(url)
+            resp = await self._send(client.get(url), url)
             _raise_for(resp)
             return resp.json()
+
+    async def _send(self, awaitable, url: str) -> httpx.Response:
+        """Turn a transport failure into an OnshapeError, so a verify records it as a run
+        error rather than escaping as a 500. Onshape being unreachable teaches us nothing
+        about the model, which is exactly what `error` means."""
+        try:
+            return await awaitable
+        except httpx.HTTPError as exc:
+            raise OnshapeError(
+                f"could not reach Onshape at {url}: {exc}. Check network egress from the app "
+                "container and E2_ONSHAPE_BASE."
+            ) from exc
 
     async def element_metadata(
         self, did: str, wid: str, eid: str, pin: dict[str, Any] | None = None
@@ -182,7 +194,7 @@ class OnshapeClient:
         url = f"{self.base}/api/{self.api_version}/partstudios/d/{did}/{wv}/{wvid}/e/{eid}/featurescript"
         body = {"script": script, "queries": queries or [], "rejectMicroversionSkew": False}
         async with self._client() as client:
-            resp = await client.post(url, json=body)
+            resp = await self._send(client.post(url, json=body), url)
             _raise_for(resp)
             data = resp.json()
         notices = [n for n in (data.get("notices") or []) if n.get("level") in ("ERROR", "WARNING")]

@@ -105,15 +105,17 @@ class Verifier:
         return run
 
     def _apply_verdict(self, item: Item, run: dict[str, Any]) -> None:
-        """pass → verified, fail → failed, error → left alone (we learned nothing)."""
+        """pass → verified, fail → failed, error → status untouched.
+
+        An error means the run told us nothing about the claim (the script raised, the runner
+        is down, Onshape is unreachable), so it must not move the item in either direction.
+        """
         if item.status in ("deprecated", "abandoned"):
             return
         if run["verdict"] == "pass":
             item.status = "verified"
         elif run["verdict"] == "fail":
             item.status = "failed"
-        elif item.status in ("draft", "open", "claimed"):
-            item.status = "proposed"
 
     # -- per-kind ---------------------------------------------------------
 

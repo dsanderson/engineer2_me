@@ -141,3 +141,51 @@ async def test_human_confirmation_verifies_an_attested_fact(platform, graph, act
     fact = platform.confirm(graph["fact"].id, True, Actor("human", "dsa"), "read the datasheet")
     assert fact.human_confirmed and fact.status == "verified"
     assert fact.confirmation["by"] == "dsa"
+
+
+async def test_cad_verify_without_credentials_says_so_plainly(platform, graph, actor):
+    model = platform.create(
+        {
+            "kind": "cad_model",
+            "title": "Arm Part Studio",
+            "payload": {"provider": "onshape", "did": "d", "wid": "w", "eid": "e"},
+        },
+        actor,
+    )
+    run = await platform.verify(model.id, ACTOR)
+    assert run["verdict"] == "error"
+    assert run["error"]["type"] == "NotConfigured"
+    assert "ONSHAPE_ACCESS_KEY" in run["error"]["message"]
+    # an error must not demote the item — we learned nothing about the geometry
+    assert platform.store.get(model.id).status == "draft"
+
+
+async def test_cad_verify_records_the_microversion_when_credentials_work(platform, actor, monkeypatch):
+    import httpx
+
+    model = platform.create(
+        {
+            "kind": "cad_model",
+            "title": "Arm Part Studio",
+            "status": "proposed",
+            "payload": {"provider": "onshape", "did": "d", "wid": "w", "eid": "e"},
+        },
+        actor,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "currentmicroversion" in str(request.url):
+            return httpx.Response(200, json={"microversion": "mv2"})
+        return httpx.Response(200, json=[{"name": "Arm", "elementType": "PARTSTUDIO"}])
+
+    platform.verifier.onshape.access_key = "key"
+    platform.verifier.onshape.secret_key = "secret"
+    monkeypatch.setattr(
+        platform.verifier.onshape,
+        "_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    run = await platform.verify(model.id, ACTOR)
+    assert run["verdict"] == "pass"
+    assert run["microversion"] == "mv2"
+    assert platform.store.get(model.id).payload["last_seen_microversion"] == "mv2"

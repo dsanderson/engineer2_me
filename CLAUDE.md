@@ -49,7 +49,8 @@ handler, it belongs in one of those two instead.
 * **Units compare as exact strings.** No automatic conversion, anywhere. A silent metre/millimetre swap
   is the most likely real bug in this system, so it must fail loudly.
 * **`fail` and `error` are different.** `fail` = the claimed answer is wrong. `error` = we learned
-  nothing (script raised, timed out, runner down). An `error` never demotes an item to `failed`.
+  nothing (script raised, timed out, runner down, Onshape unreachable). An `error` leaves `status`
+  untouched in both directions — it is not evidence for or against the claim.
 * **Invalidation is one level deep per write** and moves `verified → proposed`, never to `failed`. The
   cascade happens as each stale item is itself re-verified. Cycles are legal; the walk is cycle-safe.
 * **References live on the source item; backlinks are derived** by the index and never stored.

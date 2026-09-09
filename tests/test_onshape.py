@@ -124,3 +124,13 @@ async def test_version_pinned_models_evaluate_against_the_version(monkeypatch):
     monkeypatch.setattr(client, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     await client.eval_featurescript("D", "W", "E", "f", pin={"kind": "version", "vid": "V"})
     assert "/d/D/v/V/e/E/" in seen["url"]
+
+
+async def test_unreachable_onshape_is_an_error_not_a_crash(monkeypatch):
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("nodename nor servname provided", request=request)
+
+    client = OnshapeClient("key", "secret")
+    monkeypatch.setattr(client, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(boom)))
+    with pytest.raises(OnshapeError, match="could not reach Onshape"):
+        await client.eval_featurescript("D", "W", "E", "function(){}")
