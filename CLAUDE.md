@@ -90,6 +90,10 @@ handler, it belongs in one of those two instead.
   Onshape's behaviour. Capture fixtures from real responses when the bug could be a contract change.
 * `Settings` reads Onshape credentials from the environment and from `.env`, so `tests/conftest.py` pins
   them empty. Without that, "unconfigured" tests pass or fail depending on whose machine runs them.
+* `unitToPower` is a mapping with upper-cased keys (`{"METER": 1}`) on the current API, not the
+  list of `{key, value}` pairs the older shape used. Fold case before looking up `UNIT_ABBREV`.
+* Onshape answers in base SI: `2 * millimeter` returns `0.002` with `METER: 1`. An `expect` written
+  as `2 mm` cannot match. Divide the units out in the script and expect a bare number.
 
 ## Where the tests are
 

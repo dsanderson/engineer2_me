@@ -38,12 +38,26 @@ class NotConfigured(OnshapeError):
     pass
 
 
-def _unit_string(unit_to_power: list[dict[str, Any]]) -> str:
+def _unit_entries(unit_to_power: Any) -> list[tuple[str, Any]]:
+    """Normalise `unitToPower`, which Onshape has returned in two different shapes.
+
+    Current API: a mapping, `{"METER": 1}`. Older/documented: a list of
+    `{"key": "meter", "value": 1}` entries. Unit names are upper-cased in the mapping form,
+    so callers must fold case before looking anything up.
+    """
+    if isinstance(unit_to_power, dict):
+        return [(str(k), v) for k, v in unit_to_power.items()]
+    return [
+        (str(e.get("key", "?")), e.get("value", 1))
+        for e in (unit_to_power or [])
+        if isinstance(e, dict)
+    ]
+
+
+def _unit_string(unit_to_power: Any) -> str:
     parts = []
-    for entry in sorted(unit_to_power, key=lambda e: -float(e.get("value", 0))):
-        name = str(entry.get("key", "?"))
-        power = entry.get("value", 1)
-        abbrev = UNIT_ABBREV.get(name, name)
+    for name, power in sorted(_unit_entries(unit_to_power), key=lambda e: -float(e[1] or 0)):
+        abbrev = UNIT_ABBREV.get(name.lower(), name.lower())
         if power == 1:
             parts.append(abbrev)
         else:

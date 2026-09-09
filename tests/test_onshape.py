@@ -126,6 +126,39 @@ def test_decode_units_with_powers():
     assert decode_fs(pressure)["units"] == "kg*s^-2"
 
 
+def test_units_from_the_current_mapping_shape():
+    """Onshape returns `unitToPower` as an upper-cased mapping; we long assumed a list."""
+    length = {
+        "btType": "com.belmonttech.serialize.fsvalue.BTFSValueWithUnits",
+        "value": 0.002,
+        "unitToPower": {"METER": 1},
+    }
+    assert decode_fs(length) == {"value": 0.002, "units": "m"}
+
+
+def test_units_mapping_shape_with_powers_and_ordering():
+    density = {
+        "btType": "com.belmonttech.serialize.fsvalue.BTFSValueWithUnits",
+        "value": 7850.0,
+        "unitToPower": {"KILOGRAM": 1, "METER": -3},
+    }
+    assert decode_fs(density)["units"] == "kg*m^-3"
+
+
+def test_onshape_normalises_to_base_si_so_expect_must_too():
+    """`2 * millimeter` comes back as 0.002 m. An expect of 2 mm will never match — by design:
+    units compare as exact strings and there is no conversion anywhere in this system."""
+    got = decode_fs(
+        {
+            "btType": "com.belmonttech.serialize.fsvalue.BTFSValueWithUnits",
+            "value": 0.002,
+            "unitToPower": {"METER": 1},
+        }
+    )
+    assert got != {"value": 2.0, "units": "mm"}
+    assert got == {"value": 0.002, "units": "m"}
+
+
 def test_unknown_bttype_passes_through_and_poisons_the_path():
     weird = {"btType": "BTFSValueMysteryBox-9999", "value": 1}
     assert decode_fs(weird) == weird

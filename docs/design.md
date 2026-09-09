@@ -519,6 +519,18 @@ The response is FS value-encoded, not plain JSON:
   (`kilogram^1` → `kg`, `meter^3` → `m^3`). Comparison of a `{value, units}` object requires unit strings to
   match exactly *and* the value to be within tolerance — a silent metre/millimetre swap is the most likely
   real bug in this whole system, so it must fail loudly.
+
+`unitToPower` arrives in two shapes and both are handled: the current API returns a **mapping with
+upper-cased names**, `{"METER": 1}`, while the list-of-`{key, value}` form above is what it returned
+historically. Names are folded to lower case before abbreviation, or `METER` renders as `METER` instead
+of `m`.
+
+**Onshape normalises to base SI before it answers.** A script returning `2 * millimeter` comes back as
+`{"value": 0.002, "units": "m"}`, so an `expect` of `{"value": 2, "units": "mm"}` will never match. This
+is the metre/millimetre failure the exact-string rule exists to catch, and it fires on the author rather
+than on a reader. Either write `expect` in base SI, or divide the units out in the script
+(`x / millimeter`) and expect a bare number — the reference in `skills/engineer2/` recommends the latter
+because the intent is then visible in the FeatureScript itself.
 * Unknown `btType` → passed through as-is, and the run is marked `error` if it appears inside a compared path.
 
 `btType` is matched on its **trailing segment**, because Onshape is not consistent about qualification:
