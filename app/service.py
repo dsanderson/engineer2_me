@@ -303,8 +303,11 @@ class Platform:
         return await self.verifier.verify(item, actor)
 
     def health(self) -> dict[str, Any]:
+        from app.config import env_file
+
         return {
             "ok": True,
+            "env_file": str(env_file) if env_file else None,
             "items": len(self.index),
             "data_dir": str(self.settings.data_dir),
             "data_writable": self.settings.data_dir.exists(),

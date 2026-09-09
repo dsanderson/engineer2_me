@@ -63,6 +63,9 @@ handler, it belongs in one of those two instead.
 * Payload validators reject unknown keys, so adding a payload field means adding it to `_PAYLOAD_KEYS`.
 * `payload.script` is a write-only convenience on `calculator` / `cad_evaluation`: `service.py`
   materialises it into `files/<entrypoint>` with a sha256 and drops it from the stored envelope.
+* Settings are read from the environment once at import, seeded first from an optional gitignored
+  `.env` (`load_env_file` in `config.py`, `setdefault` so the environment wins). Credential changes
+  need a restart — there is no hot reload.
 * Errors: `ValidationError` → 400, `NotFound` → 404, `Conflict` → 409. Raise them from `service.py`;
   `web/api.py` maps them.
 * HTML is server-rendered FT components over Pico. Every page works with JS off — plain form POST plus

@@ -1,10 +1,52 @@
-"""Environment-driven settings. No config files; everything is an env var with a default."""
+"""Settings, read from the environment — optionally seeded from a gitignored `.env` file.
+
+Every setting is an env var with a default. Secrets (the Onshape key pair, the Basic
+auth password) are awkward to keep in a shell profile, so `.env` next to `main.py` is
+read first and used only to fill in variables the environment does not already set.
+"""
 
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
+
+ENV_FILE_DEFAULT = ".env"
+
+
+def load_env_file(path: str | Path | None = None) -> Path | None:
+    """Seed os.environ from a KEY=value file. A real env var always wins.
+
+    Deliberately tiny: `#` comments, blank lines, an optional `export ` prefix, and
+    optional surrounding quotes. No interpolation — a literal `$` in a secret should
+    stay a literal `$`.
+    """
+    path = Path(path or os.environ.get("E2_ENV_FILE") or ENV_FILE_DEFAULT).expanduser()
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ").lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)  # the environment overrides the file
+    return path
+
+
+def env_file_is_world_readable(path: Path) -> bool:
+    """A secrets file other users can read is worth one line of warning at startup."""
+    try:
+        return bool(path.stat().st_mode & (stat.S_IRGRP | stat.S_IROTH))
+    except OSError:
+        return False
 
 
 def _env(name: str, default: str) -> str:
@@ -45,4 +87,6 @@ class Settings:
         return bool(self.password)
 
 
+# Read before Settings is built, so the file can supply any variable below.
+env_file = load_env_file()
 settings = Settings()

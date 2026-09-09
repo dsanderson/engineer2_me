@@ -110,6 +110,20 @@ There is no `DELETE`, by design.
 
 ## Configuration
 
+Anything below can live in a **`.env` file next to `main.py`** instead of your shell — it is
+gitignored, and `cp .env.example .env` gets you a commented starting point. It is the obvious home
+for the Onshape key pair:
+
+```bash
+cp .env.example .env && chmod 600 .env
+$EDITOR .env          # ONSHAPE_ACCESS_KEY=... / ONSHAPE_SECRET_KEY=...
+```
+
+The process environment always wins over the file, so `ONSHAPE_ACCESS_KEY=other uv run python main.py`
+still overrides it for one run. `E2_ENV_FILE=/path/to/secrets.env` points somewhere else. The startup
+banner names the file it loaded (and says so if it is readable by other users); `/api/v1/health`
+reports it as `env_file`. The Docker stack reads `deploy/.env` through compose instead.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `E2_DATA_DIR` | `./data` | Where everything lives. The filesystem is the database. |
