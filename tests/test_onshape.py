@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -31,6 +33,73 @@ MAP = {
         },
     ],
 }
+
+
+# Captured from a live Onshape response (api/v9, 2026-09). Note the inconsistency this exists
+# to pin down: the *value* objects are fully qualified, while the map *entries* are bare.
+# Hand-written fixtures used the bare form throughout, which is why the suite stayed green
+# while every production evaluation failed.
+QUALIFIED_MAP = {
+    "btType": "com.belmonttech.serialize.fsvalue.BTFSValueMap",
+    "value": [
+        {
+            "btType": "BTFSValueMapEntry-2077",
+            "key": {"btType": "com.belmonttech.serialize.fsvalue.BTFSValueString", "value": "bore_mm"},
+            "value": {
+                "btType": "com.belmonttech.serialize.fsvalue.BTFSValueNumber",
+                "value": 38.73475265716953,
+            },
+        },
+        {
+            "btType": "BTFSValueMapEntry-2077",
+            "key": {"btType": "com.belmonttech.serialize.fsvalue.BTFSValueString", "value": "mass"},
+            "value": {
+                "btType": "com.belmonttech.serialize.fsvalue.BTFSValueWithUnits",
+                "value": 0.32441,
+                "unitToPower": [{"key": "kilogram", "value": 1}],
+            },
+        },
+        {
+            "btType": "BTFSValueMapEntry-2077",
+            "key": {"btType": "com.belmonttech.serialize.fsvalue.BTFSValueString", "value": "missing"},
+            "value": {"btType": "com.belmonttech.serialize.fsvalue.BTFSValueUndefined"},
+        },
+    ],
+}
+
+
+def test_decode_fully_qualified_bttypes_from_a_real_response():
+    """Onshape qualifies its value btTypes; matching the raw string skipped every branch."""
+    assert decode_fs(QUALIFIED_MAP) == {
+        "bore_mm": 38.73475265716953,
+        "mass": {"value": 0.32441, "units": "kg"},
+        "missing": None,
+    }
+
+
+def test_a_qualified_result_is_fully_decoded():
+    """The failure mode was silent: undecoded values marked the whole run `error`."""
+    assert has_undecoded(decode_fs(QUALIFIED_MAP)) is False
+
+
+def test_map_entry_is_not_mistaken_for_a_map():
+    """`BTFSValueMapEntry` is a prefix of `BTFSValueMap`; only the map branch may read it."""
+    entry = {"btType": "BTFSValueMapEntry-2077", "key": {}, "value": {}}
+    assert has_undecoded(decode_fs(entry)) is True
+
+
+async def test_queries_is_sent_as_a_map_not_an_array(monkeypatch):
+    """Onshape types `queries` as a map; an empty array 400s before the script compiles."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"result": QUALIFIED_MAP, "sourceMicroversion": "mv"})
+
+    client = OnshapeClient("key", "secret")
+    monkeypatch.setattr(client, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    await client.eval_featurescript("D", "W", "E", "function(){}")
+    assert seen["body"]["queries"] == {}, "an empty list here is rejected by Onshape with a 400"
 
 
 def test_decode_map_array_and_scalars():

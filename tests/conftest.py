@@ -15,7 +15,16 @@ from app.service import Platform  # noqa: E402
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    return Settings(data_dir=tmp_path / "data", runner_url="http://localhost:8001")
+    # Onshape credentials are pinned empty rather than inherited: Settings reads them from the
+    # environment (and, since .env support landed, from a developer's .env), which would make
+    # "unconfigured" tests pass or fail depending on whose machine ran them. Tests that need a
+    # working client monkeypatch it directly.
+    return Settings(
+        data_dir=tmp_path / "data",
+        runner_url="http://localhost:8001",
+        onshape_access_key="",
+        onshape_secret_key="",
+    )
 
 
 @pytest.fixture

@@ -55,6 +55,12 @@ def _unit_string(unit_to_power: list[dict[str, Any]]) -> str:
 def decode_fs(value: Any) -> Any:
     """Collapse Onshape's FS value encoding into ordinary Python.
 
+    Onshape is inconsistent about `btType`: the value objects come back fully qualified
+    (`com.belmonttech.serialize.fsvalue.BTFSValueNumber`) while the entries inside a map
+    come back bare (`BTFSValueMapEntry-2077`). Match on the trailing segment so both forms
+    decode, and keep `BTFSValueMapEntry` from being mistaken for a `BTFSValueMap` — an
+    entry is only ever read from inside the map branch.
+
     Unknown `btType`s are passed through untouched — `verify` marks a run as `error`
     if one of them shows up inside a compared path, rather than guessing.
     """
@@ -63,8 +69,8 @@ def decode_fs(value: Any) -> Any:
             return [decode_fs(v) for v in value]
         return value
 
-    bt = value.get("btType", "")
-    if bt.startswith("BTFSValueMap"):
+    bt = value.get("btType", "").rsplit(".", 1)[-1]
+    if bt.startswith("BTFSValueMap") and not bt.startswith("BTFSValueMapEntry"):
         out: dict[str, Any] = {}
         for pair in value.get("value", []):
             key = decode_fs(pair.get("key"))
@@ -185,14 +191,16 @@ class OnshapeClient:
         wid: str,
         eid: str,
         script: str,
-        queries: list[Any] | None = None,
+        queries: dict[str, Any] | None = None,
         pin: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """POST the FS lambda to a Part Studio and return `{result, sourceMicroversion, notices}`."""
         self._require()
         wv, wvid = self._wve(pin, wid)
         url = f"{self.base}/api/{self.api_version}/partstudios/d/{did}/{wv}/{wvid}/e/{eid}/featurescript"
-        body = {"script": script, "queries": queries or [], "rejectMicroversionSkew": False}
+        # `queries` is a MAP on the wire (BTFeatureScriptEvalCall). An empty *array* is
+        # rejected by Onshape's deserialiser with a 400 before the script is compiled.
+        body = {"script": script, "queries": queries or {}, "rejectMicroversionSkew": False}
         async with self._client() as client:
             resp = await self._send(client.post(url, json=body), url)
             _raise_for(resp)

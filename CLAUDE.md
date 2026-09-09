@@ -79,6 +79,17 @@ handler, it belongs in one of those two instead.
   pipe to fd 3 there. It passes the fd number to the child in `E2_RESULT_FD` instead.
 * Don't wrap pages in `Titled` and a `Main` — you get nested `<main>`. `shell()` in `pages.py` is the
   one place that builds a page.
+* Onshape's `featurescript` endpoint types `queries` as a **map**. An empty *array* 400s during
+  deserialisation, before the script is compiled — so the error mentions neither your script nor
+  `queries`, and every `cad_evaluation` reads as flaky rather than broken.
+* Onshape returns `btType` fully qualified on value objects (`com.belmonttech.serialize.fsvalue.
+  BTFSValueNumber`) but bare on map entries (`BTFSValueMapEntry-2077`). `decode_fs` matches the trailing
+  segment for that reason, and excludes `BTFSValueMapEntry` — it is a string prefix of `BTFSValueMap`.
+* Both of the above were invisible to a green test suite: the fixtures were hand-written in the bare form
+  and the transport was mocked, so the suite asserted our beliefs about the wire format rather than
+  Onshape's behaviour. Capture fixtures from real responses when the bug could be a contract change.
+* `Settings` reads Onshape credentials from the environment and from `.env`, so `tests/conftest.py` pins
+  them empty. Without that, "unconfigured" tests pass or fail depending on whose machine runs them.
 
 ## Where the tests are
 

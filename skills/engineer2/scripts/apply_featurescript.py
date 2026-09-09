@@ -41,8 +41,9 @@ def decode_fs(value):
         return [decode_fs(v) for v in value]
     if not isinstance(value, dict):
         return value
-    bt = value.get("btType", "")
-    if bt.startswith("BTFSValueMap"):
+    # Onshape returns value objects fully qualified and map entries bare; match the tail.
+    bt = value.get("btType", "").rsplit(".", 1)[-1]
+    if bt.startswith("BTFSValueMap") and not bt.startswith("BTFSValueMapEntry"):
         out = {}
         for pair in value.get("value", []):
             key = decode_fs(pair.get("key"))
@@ -112,7 +113,7 @@ def main() -> int:
         if args.evaluate:
             resp = c.post(
                 f"/partstudios/d/{did}/w/{wid}/e/{eid}/featurescript",
-                json={"script": source, "queries": [], "rejectMicroversionSkew": False},
+                json={"script": source, "queries": {}, "rejectMicroversionSkew": False},
             )
             if resp.status_code >= 400:
                 print(resp.text, file=sys.stderr)

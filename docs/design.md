@@ -458,6 +458,19 @@ This is the engineering analogue of prove2.me's "children auto-resolve when prov
 auto-*unresolve* when their children move. Propagation is one level deep per write; the cascade happens
 naturally as each invalidated item is itself re-verified or edited.
 
+**Invalidation follows edges, so a copied number is invisible to it.** A calculation whose input is the
+literal `10.093` is not linked to the item that computed 10.093, however carefully the two were matched:
+it will never be marked stale, and it will go on asserting an answer built from a value that has since
+been corrected. Binding the same input as `{"$ref": "item:…#/payload/expect/p_design_MPa"}` costs nothing
+at run time — the resolved value is frozen into the run record either way — and is the only form the
+cascade can see.
+
+This bites hardest at the top of a graph, where results are scored and compared against each other and
+where the inputs are most likely to have been transcribed by hand from a table. Those items are the ones
+whose staleness matters most and the ones least likely to be re-verified on a whim. Policy inputs —
+weights, thresholds, a chosen safety factor — are a different matter and *should* be literals: they have
+no upstream owner, and writing them inline is what makes them arguable.
+
 ---
 
 ## 5. Onshape integration
@@ -472,9 +485,15 @@ Authorization: Basic base64(ACCESS_KEY:SECRET_KEY)
 Content-Type: application/json
 
 {"script": "function(context is Context, queries) { … return …; }",
- "queries": [],
+ "queries": {},
  "rejectMicroversionSkew": false}
 ```
+
+`queries` is a **map**, not an array. Onshape's `BTFeatureScriptEvalCall` types it as
+`LinkedHashMap<String, List<String>>`, and an empty *array* is rejected with a 400 during
+deserialisation — before the script is compiled, so the error says nothing about the script and
+the run is recorded as `error` rather than `fail`. We shipped `[]` here and every `cad_evaluation`
+on the platform failed identically until it was corrected.
 
 Auth is an Onshape API key pair used as HTTP Basic, supplied to the app as
 `ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY`. If they are absent, CAD kinds still store and render — only
@@ -501,6 +520,18 @@ The response is FS value-encoded, not plain JSON:
   match exactly *and* the value to be within tolerance — a silent metre/millimetre swap is the most likely
   real bug in this whole system, so it must fail loudly.
 * Unknown `btType` → passed through as-is, and the run is marked `error` if it appears inside a compared path.
+
+`btType` is matched on its **trailing segment**, because Onshape is not consistent about qualification:
+the value objects arrive fully qualified (`com.belmonttech.serialize.fsvalue.BTFSValueNumber`) while the
+entries inside a map arrive bare (`BTFSValueMapEntry-2077`). Matching the raw string against
+`BTFSValueNumber` therefore skips every branch, and the whole result falls through to "unknown" — which
+marks the run `error`, silently, for every evaluation. The bare form above is what the API returned
+historically; treat both as live. Note also that `BTFSValueMapEntry` is a string prefix of
+`BTFSValueMap` and must be excluded explicitly, or an entry decodes as if it were a map.
+
+Fixtures for this decoder must be **captured from real responses**. Hand-written ones encode what we
+believe the wire format to be, which is precisely the thing that drifted; a mocked-transport test cannot
+catch a client/server contract change by construction.
 
 The returned `sourceMicroversion` is stored on the run and copied to the model's `last_seen_microversion`.
 

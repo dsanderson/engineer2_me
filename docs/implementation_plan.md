@@ -133,7 +133,7 @@ it to `verified` with a run record naming the fact's new revision.
 | 5.6 | UI: clickable Onshape document link, ids, microversion with drift indicator, FeatureScript source display | `app/web/pages.py` |
 | 5.7 | `scripts/apply_featurescript.py`: read a `.fs` file → PUT into a named Feature Studio in the target document → optionally evaluate against a Part Studio → print decoded JSON. Standalone, no platform dependency. | `skills/engineer2/scripts/` |
 
-**Tests:** `decode_fs` unit tests against recorded fixtures (maps, arrays, nested, units, unknown types);
+**Tests:** `decode_fs` unit tests against recorded fixtures (maps, arrays, nested, units, unknown types, and both the bare and fully-qualified `btType` spellings — fixtures captured from real responses, not hand-written); a request-body assertion that `queries` is serialised as a map;
 client tests against a mocked transport; one opt-in live test gated on credentials being present.
 
 **Done when:** a real Part Studio's mass and bounding box are pulled in by a `cad_evaluation`, and that
