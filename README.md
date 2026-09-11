@@ -103,7 +103,7 @@ POST   /api/v1/items/{id}/verify?wait=30    GET /api/v1/runs/{run_id}   GET /api
 POST   /api/v1/verify-all?mission=
 GET    /api/v1/missions | /missions/{id}/graph | /open | /milestones
 GET    /api/v1/open | /events?since= | /stats | /health | /export
-GET    /start.md | /skill.md
+GET    /start.md | /skill.md | /skill.tar.gz   (the agent skill, installable)
 ```
 
 There is no `DELETE`, by design.

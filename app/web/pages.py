@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlencode
 
 from fasthtml.common import (
     H1,
@@ -42,6 +43,8 @@ from fasthtml.common import (
 
 from app.graph import (
     blockers,
+    filter_ids,
+    layered,
     mermaid,
     milestone_state,
     mission_closure,
@@ -59,6 +62,9 @@ from app.web.components import (
     confirmed_badge,
     diff_table,
     event_line,
+    graph_edge_table,
+    graph_legend,
+    graph_view,
     item_link,
     item_table,
     json_block,
@@ -89,9 +95,11 @@ def script_text(item) -> str:
         return ""
 
 
-def shell(title: str, *content, active: str = ""):
+def shell(title: str, *content, active: str = "", wide: bool = False):
     """Nav, then an h1, then the page. One <main>, so Pico's container rules apply once."""
-    return Title(f"{title} — engineer2.me"), Main(page_nav(active), H1(title), *content, cls="container")
+    return Title(f"{title} — engineer2.me"), Main(
+        page_nav(active), H1(title), *content, cls="container wide" if wide else "container"
+    )
 
 
 def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route table, not a function
@@ -555,7 +563,42 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
 
     # -- graphs -----------------------------------------------------------
 
-    def _graph_section(ids: set[str]):
+    def _graph_query(q) -> tuple[set[str], set[str], str]:
+        """Nothing ticked means everything: a filter narrows the graph, it never empties it."""
+        kinds = {k for k in q.getlist("kind") if k in KINDS} or set(KINDS)
+        statuses = {s for s in q.getlist("status") if s in STATUSES} or set(STATUSES)
+        return kinds, statuses, "mermaid" if q.get("view") == "mermaid" else "html"
+
+    def _graph_query_string(action, kinds, statuses, view, hidden):
+        params = list((hidden or {}).items())
+        if kinds != set(KINDS):
+            params += [("kind", k) for k in KINDS if k in kinds]
+        if statuses != set(STATUSES):
+            params += [("status", st) for st in STATUSES if st in statuses]
+        if view == "mermaid":
+            params.append(("view", view))
+        return action + (f"?{urlencode(params)}" if params else "")
+
+    def _graph_filters(action, kinds, statuses, view, hidden):
+        def boxes(name, options, chosen):
+            return Div(
+                Small(name, cls="muted"),
+                *[Label(Input(type="checkbox", name=name, value=o, checked=o in chosen), o) for o in options],
+                cls="gset",
+            )
+
+        return Form(
+            *[Input(type="hidden", name=k, value=v) for k, v in (hidden or {}).items()],
+            Input(type="hidden", name="view", value=view),
+            boxes("kind", KINDS, kinds),
+            boxes("status", STATUSES, statuses),
+            Button("Apply", type="submit"),
+            method="get",
+            action=action,
+            cls="gfilters",
+        )
+
+    def _mermaid_block(ids: set[str]):
         source = mermaid(index, ids)
         return Div(
             Div(Pre(source, cls="mermaid"), cls="graph"),
@@ -567,13 +610,77 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
             ),
         )
 
+    def _html_graph(layout: dict[str, Any], focus: str | None = None):
+        present = [st for st in STATUSES if any(n["status"] == st for lay in layout["layers"] for n in lay)]
+        return Div(graph_legend(present), graph_view(layout, focus), Script(src="/static/graph.js"))
+
+    def _graph_section(
+        ids: set[str],
+        action: str,
+        q,
+        hidden: dict[str, str] | None = None,
+        root: str | None = None,
+        focus: str | None = None,
+    ):
+        """The graph plus its controls. HTML by default; the mermaid diagram is one click away."""
+        kinds, statuses, view = _graph_query(q)
+        shown = filter_ids(index, ids, kinds, statuses)
+        layout = layered(index, shown, root)
+        views = Small(
+            "view: ",
+            A(
+                "html",
+                href=_graph_query_string(action, kinds, statuses, "html", hidden),
+                cls="active" if view == "html" else None,
+            ),
+            " · ",
+            A(
+                "diagram",
+                href=_graph_query_string(action, kinds, statuses, "mermaid", hidden),
+                cls="active" if view == "mermaid" else None,
+            ),
+            cls="gviews",
+        )
+        return Div(
+            views,
+            _graph_filters(action, kinds, statuses, view, hidden),
+            P(
+                Small(
+                    f"{len(shown)} of {len(ids)} items · {len(layout['edges'])} references",
+                    cls="muted",
+                )
+            ),
+            _mermaid_block(shown) if view == "mermaid" else _html_graph(layout, focus),
+            Details(Summary("references as text"), graph_edge_table(index, layout["edges"])),
+        )
+
     @app.get("/items/{id}/graph")
-    def item_graph(id: str, depth: int = 2):
+    def item_graph(req: Request, id: str, depth: int = 2):
         item = store.get(id)
+        depth = max(1, min(depth, 4))
         return shell(
             f"{item.title} — neighbourhood",
-            P(A("← back", href=f"/items/{id}"), f" · depth {depth}"),
-            _graph_section(neighbourhood(index, id, depth)),
+            P(
+                A("← back", href=f"/items/{id}"),
+                " · depth: ",
+                *[
+                    Span(
+                        Span(str(d), cls="rel")
+                        if d == depth
+                        else A(str(d), href=f"/items/{id}/graph?depth={d}"),
+                        " ",
+                    )
+                    for d in (1, 2, 3, 4)
+                ],
+            ),
+            _graph_section(
+                neighbourhood(index, id, depth),
+                f"/items/{id}/graph",
+                req.query_params,
+                {"depth": str(depth)},
+                focus=id,
+            ),
+            wide=True,
         )
 
     # -- missions ---------------------------------------------------------
@@ -640,7 +747,11 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
                 P(Small("Ordered so the first row is never blocked.", cls="muted")),
                 _queue_table(queue),
             ),
-            Section(H2(f"Graph ({len(ids)} items)"), _graph_section(ids)),
+            Section(
+                H2(f"Graph ({len(ids)} items)"),
+                P(A("filter, or see it as a diagram →", href=f"/missions/{id}/graph")),
+                _html_graph(layered(index, ids, id)),
+            ),
             Section(
                 H2("Members"),
                 item_table(index, [index.summary(i) for i in ids if i != id and index.summary(i)]),
@@ -658,6 +769,18 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
                 A("as JSON", href=f"/api/v1/missions/{id}/open"),
             ),
             active="missions",
+        )
+
+    @app.get("/missions/{id}/graph")
+    def mission_graph(req: Request, id: str):
+        item = store.get(id)
+        ids = mission_closure(index, id)
+        return shell(
+            f"{item.title} — graph",
+            P(A("← back to mission", href=f"/missions/{id}")),
+            _graph_section(ids, f"/missions/{id}/graph", req.query_params, root=id),
+            active="missions",
+            wide=True,
         )
 
     # -- events -----------------------------------------------------------
@@ -789,6 +912,47 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
     @app.get("/skill.md")
     def skill_md():
         return _markdown_doc("skill.md")
+
+    @app.get("/skill.tar.gz")
+    def skill_tarball():
+        """The whole skill — SKILL.md, references, scripts — so an agent can install it itself.
+
+        `/skill.md` is only the front page; the scripts under `scripts/` are the part that does
+        the Onshape mechanics, and an agent cannot fetch a directory. Built on each request so it
+        is always the running version, never a stale artefact someone forgot to rebuild.
+        """
+        import io
+        import tarfile
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent.parent / "skills" / "engineer2"
+        if not root.is_dir():
+            raise NotFound("no skill to download")
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for path in sorted(root.rglob("*")):
+                if not path.is_file() or _skip_from_skill(path):
+                    continue
+                data = path.read_bytes()
+                if path.suffix == ".md":
+                    data = data.decode("utf-8").replace("{{BASE_URL}}", settings.base_url).encode()
+                info = tarfile.TarInfo(f"engineer2/{path.relative_to(root).as_posix()}")
+                info.size = len(data)
+                info.mtime = int(path.stat().st_mtime)
+                # The scripts carry a shebang and are meant to be run directly.
+                info.mode = 0o755 if path.suffix == ".py" else 0o644
+                tar.addfile(info, io.BytesIO(data))
+        return Response(
+            buf.getvalue(),
+            media_type="application/gzip",
+            headers={"Content-Disposition": 'attachment; filename="engineer2-skill.tar.gz"'},
+        )
+
+    def _skip_from_skill(path) -> bool:
+        return any(part in ("__pycache__", ".ruff_cache", ".pytest_cache") for part in path.parts) or (
+            path.suffix in (".pyc", ".pyo")
+        )
 
     def _markdown_doc(name: str):
         from pathlib import Path

@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from app.graph import mermaid, mission_closure, mission_progress, neighbourhood, open_queue
+from app.graph import (
+    filter_ids,
+    layered,
+    mermaid,
+    mission_closure,
+    mission_progress,
+    neighbourhood,
+    open_queue,
+)
 
 
 def test_closure_reaches_members_and_what_they_depend_on(graph, platform):
@@ -90,3 +98,51 @@ def test_mermaid_collapses_a_large_graph_to_the_idea_skeleton(graph, platform):
     ids = mission_closure(platform.index, graph["mission"].id)
     source = mermaid(platform.index, ids, collapse_above=1)
     assert source.count("click ") == 1  # only the idea survives
+
+
+def test_layers_put_a_mission_above_its_members_and_their_dependencies(graph, platform):
+    ids = mission_closure(platform.index, graph["mission"].id)
+    layout = layered(platform.index, ids, root=graph["mission"].id)
+    depth = {n["id"]: n["depth"] for layer in layout["layers"] for n in layer}
+    assert depth[graph["mission"].id] == 0
+    # part_of is flipped for layout, so members hang under the mission
+    assert depth[graph["calculation"].id] > depth[graph["mission"].id]
+    # and a calculation sits above the calculator and the fact it leans on
+    assert depth[graph["calculator"].id] > depth[graph["calculation"].id]
+    assert depth[graph["fact"].id] > depth[graph["calculation"].id]
+    assert [n["id"] for n in layout["layers"][0]] == [graph["mission"].id]
+
+
+def test_layers_survive_a_cycle(platform, actor):
+    a = platform.create({"kind": "idea", "title": "a", "payload": {"markdown": "a"}}, actor)
+    b = platform.create({"kind": "idea", "title": "b", "payload": {"markdown": "b"}}, actor)
+    platform.add_ref(a.id, "depends_on", b.id, "", actor)
+    platform.add_ref(b.id, "depends_on", a.id, "", actor)
+    layout = layered(platform.index, {a.id, b.id})
+    assert sum(len(layer) for layer in layout["layers"]) == 2
+    assert len(layout["edges"]) == 2
+
+
+def test_a_pinned_root_stays_on_the_top_layer(graph, platform, actor):
+    """Something in the closure depending on the mission must not push it down the page."""
+    platform.add_ref(graph["fact"].id, "depends_on", graph["mission"].id, "", actor)
+    ids = mission_closure(platform.index, graph["mission"].id)
+    layout = layered(platform.index, ids, root=graph["mission"].id)
+    assert [n["id"] for n in layout["layers"][0]] == [graph["mission"].id]
+
+
+def test_every_edge_between_shown_nodes_is_emitted_once(graph, platform):
+    ids = mission_closure(platform.index, graph["mission"].id)
+    layout = layered(platform.index, ids)
+    refs = sum(len(platform.index.refs_out(i)) for i in ids)
+    assert len(layout["edges"]) == refs
+    assert all(e["from"] in ids and e["to"] in ids for e in layout["edges"])
+
+
+def test_filtering_drops_nodes_and_the_edges_that_touch_them(graph, platform):
+    ids = mission_closure(platform.index, graph["mission"].id)
+    kept = filter_ids(platform.index, ids, kinds={"idea", "calculation"})
+    assert kept == {graph["mission"].id, graph["calculation"].id}
+    layout = layered(platform.index, kept)
+    assert all(e["from"] in kept and e["to"] in kept for e in layout["edges"])
+    assert filter_ids(platform.index, ids, statuses={"proposed"}) == {graph["fact"].id}

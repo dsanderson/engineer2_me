@@ -236,3 +236,93 @@ def mermaid(index: Index, ids: set[str], collapse_above: int = 150) -> str:
         "  classDef st-retired fill:#f5f5f5,stroke:#bdbdbd,color:#9e9e9e;",
     ]
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- html layout
+
+# `part_of` points at the mission; every other structural rel points at what the item leans
+# on. Flip `part_of` and both read the same way: the target sits one layer further down.
+LAYOUT_UP_RELS = ("part_of",)
+LAYOUT_DOWN_RELS = ("depends_on", "uses_calculator", "evaluates", "sources")
+
+
+def filter_ids(
+    index: Index, ids: set[str], kinds: set[str] | None = None, statuses: set[str] | None = None
+) -> set[str]:
+    out = set()
+    for i in ids:
+        s = index.summary(i)
+        if not s:
+            continue
+        if kinds and s["kind"] not in kinds:
+            continue
+        if statuses and s["status"] not in statuses:
+            continue
+        out.add(i)
+    return out
+
+
+def layered(index: Index, ids: set[str], root: str | None = None) -> dict[str, Any]:
+    """Nodes in top-down layers — a mission above its members above what they lean on.
+
+    Depth is the longest path down, so nothing ever sits above something it leans on. Within a
+    layer nodes are ordered by the mean position of their parents (one barycentre pass), which
+    is what keeps the lines from crossing more than they have to. Cycle-safe, like the queue.
+
+    `root` pins one item to the top layer: a mission is the subject of its own graph even when
+    something in the closure claims to depend on it.
+    """
+    ids = {i for i in ids if i in index}
+    edges: list[dict[str, Any]] = []
+    parents: dict[str, set[str]] = {i: set() for i in ids}
+    for i in sorted(ids):
+        for ref in index.refs_out(i):
+            if ref["to"] not in ids:
+                continue
+            edges.append({"from": i, "rel": ref["rel"], "to": ref["to"], "note": ref.get("note", "")})
+            if ref["rel"] in LAYOUT_UP_RELS:
+                parents[i].add(ref["to"])
+            elif ref["rel"] in LAYOUT_DOWN_RELS:
+                parents[ref["to"]].add(i)
+    if root in parents:
+        parents[root] = set()
+
+    depth_cache: dict[str, int] = {}
+
+    def depth(node: str, seen: frozenset[str] = frozenset()) -> int:
+        if node in depth_cache:
+            return depth_cache[node]
+        if node in seen:
+            return 0  # cycles are legal in design iteration; they just stop the walk
+        ups = parents.get(node) or set()
+        d = 1 + max((depth(p, seen | {node}) for p in ups), default=-1)
+        depth_cache[node] = d
+        return d
+
+    depths = {i: depth(i) for i in ids}
+    if root in depths:  # the pinned root gets the top layer to itself
+        depths = {i: 0 if i == root else d + 1 for i, d in depths.items()}
+
+    raw: dict[int, list[dict[str, Any]]] = {}
+    for i, d in depths.items():
+        summary = index.summary(i)
+        if summary:
+            raw.setdefault(d, []).append({**summary, "depth": d})
+
+    layers: list[list[dict[str, Any]]] = []
+    pos: dict[str, float] = {}  # normalised 0..1, so layers of different widths compare
+    for d in sorted(raw):
+        layer = raw[d]
+        if d == min(raw):
+            layer.sort(key=lambda n: (n["kind"], n["title"].lower()))
+        else:
+
+            def barycentre(n: dict[str, Any]) -> tuple[int, float, str]:
+                ups = [pos[p] for p in parents[n["id"]] if p in pos]
+                return (0 if ups else 1, sum(ups) / len(ups) if ups else 0.0, n["title"].lower())
+
+            layer.sort(key=barycentre)
+        for idx, n in enumerate(layer):
+            pos[n["id"]] = idx / max(1, len(layer) - 1)
+        layers.append(layer)
+    return {"layers": layers, "edges": edges}

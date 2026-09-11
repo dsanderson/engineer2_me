@@ -104,8 +104,9 @@ def main() -> int:
 
     with client() as c:
         studio_id = find_or_create_studio(c, did, wid, args.studio)
+        # The contents live on the bare element path; `/contents` is not an endpoint and 404s.
         c.post(
-            f"/featurestudios/d/{did}/w/{wid}/e/{studio_id}/contents",
+            f"/featurestudios/d/{did}/w/{wid}/e/{studio_id}",
             json={"contents": source},
         ).raise_for_status()
         print(f"wrote {args.file} → Feature Studio {args.studio} ({studio_id})", file=sys.stderr)

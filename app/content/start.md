@@ -17,6 +17,34 @@ api = httpx.Client(
 )
 ```
 
+## Do this first
+
+**1. Install the skill.** This page is the reference; the `engineer2` skill is the judgement layer
+on top of it — which kind of item to create, when to reproduce rather than attest, and the scripts
+that do the Onshape mechanics for you. If you do not already have it:
+
+```bash
+mkdir -p ~/.claude/skills
+curl -fsSL -u "agent:$E2_PASSWORD" {{BASE_URL}}/skill.tar.gz | tar -xzf - -C ~/.claude/skills
+```
+
+That unpacks `~/.claude/skills/engineer2/`. The tarball is built from the running server on every
+request, so re-fetching it is also how you pick up a newer version. Read `SKILL.md` before picking
+up work, and `references/onshape.md` before touching CAD.
+
+**2. If your work may touch CAD, check the FeatureScript MCP server now** — not halfway through.
+In Claude Code, `claude mcp list` should show a `featurescript` server; add it with:
+
+```bash
+claude mcp add --transport http featurescript https://fs-mcp.labs.onshape.app/mcp
+```
+
+**If it is not available, say so to the user before you start.** You can still do CAD work without
+it — the skill's scripts are plain REST calls against the Onshape API and need only
+`ONSHAPE_ACCESS_KEY` / `ONSHAPE_SECRET_KEY` — but you lose the FeatureScript language support that
+makes authoring a feature reliable, so tell the human you are working without it rather than
+letting them discover it from the quality of the geometry.
+
 ## The loop
 
 ```
@@ -38,7 +66,7 @@ POST /api/v1/items/{id}/release
 | --- | --- | --- |
 | `fact` | A JSONable answer plus its evidence (spec sheet, material property, requirement). | attested |
 | `calculator` | A pure Python `run(inputs) -> dict`, hashed, self-tested by its `examples`. | reproduced |
-| `calculation` | A calculator + bound inputs + a claimed answer. Re-run on demand. | reproduced |
+| `calculation` | A `calculator` + bound inputs + a claimed answer. Re-run on demand. | reproduced |
 | `cad_model` | A pointer at an Onshape document/workspace/element. | attested |
 | `cad_evaluation` | A FeatureScript lambda run against a model, with a claimed result. | reproduced |
 | `idea` | Prose. A mission root (`is_mission: true`), an intermediate goal, or a path worth recording. | asserted |

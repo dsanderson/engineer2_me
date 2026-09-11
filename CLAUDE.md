@@ -25,7 +25,7 @@ app/store.py     atomic writes, revisions, attachments, runs — the filesystem 
 app/index.py     in-memory index: summaries, backlinks, search, stats
 app/service.py   Platform: the operations. Both api.py and pages.py call into this and hold no rules
 app/verify.py    run orchestration + invalidation. The run record is the product
-app/graph.py     mission closure, the open queue, progress, mermaid
+app/graph.py     mission closure, the open queue, progress, graph layering, mermaid
 app/web/         api.py (JSON), pages.py (HTML), components.py, forms.py, app.py (builder)
 runner/          the sandbox sidecar; bootstrap.py runs inside the forked child
 ```
@@ -69,7 +69,8 @@ handler, it belongs in one of those two instead.
 * Errors: `ValidationError` → 400, `NotFound` → 404, `Conflict` → 409. Raise them from `service.py`;
   `web/api.py` maps them.
 * HTML is server-rendered FT components over Pico. Every page works with JS off — plain form POST plus
-  a 303 redirect. Mermaid is the only client-side dependency.
+  a 303 redirect, and graph filters are a GET form. Mermaid (from cdnjs) is the only third-party
+  client-side dependency; `static/graph.js` is ours and only draws edges over an already-rendered graph.
 * Ruff, line length 110. `make fmt` before committing.
 
 ## Things that surprised me while building this

@@ -236,6 +236,26 @@ def test_onboarding_docs_are_served_as_markdown(client):
     assert client.get("/skill.md").status_code == 200
 
 
+def test_skill_tarball_carries_the_scripts_and_the_real_base_url(client):
+    import io
+    import tarfile
+
+    resp = client.get("/skill.tar.gz")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/gzip"
+    with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
+        names = tar.getnames()
+        # SKILL.md alone is not installable: the scripts are the half that does the CAD work.
+        assert "engineer2/SKILL.md" in names
+        assert "engineer2/scripts/insert_feature.py" in names
+        assert "engineer2/references/onshape.md" in names
+        assert not [n for n in names if "__pycache__" in n or n.endswith(".pyc")]
+        skill = tar.extractfile("engineer2/SKILL.md").read().decode()
+        script = tar.getmember("engineer2/scripts/insert_feature.py")
+    assert "{{BASE_URL}}" not in skill  # substituted, like /skill.md
+    assert script.mode & 0o111  # the scripts have shebangs and are meant to be run
+
+
 def test_pages_render(client):
     mission = create(client, kind="idea", title="mission", payload={"is_mission": True, "goal": "g"})
     fact = create(
@@ -247,6 +267,9 @@ def test_pages_render(client):
         "/missions",
         "/events",
         f"/missions/{mission['id']}",
+        f"/missions/{mission['id']}/graph",
+        f"/missions/{mission['id']}/graph?view=mermaid",
+        f"/missions/{mission['id']}/graph?kind=fact&status=draft",
         f"/items/{fact['id']}",
         f"/items/{fact['id']}/graph",
         f"/items/{fact['id']}/edit",
@@ -278,3 +301,28 @@ def test_html_form_shows_validation_errors_instead_of_500(client):
     resp = client.post("/new/fact", data={"title": "bad", "p_data": "{not json"})
     assert resp.status_code == 200
     assert "not valid JSON" in resp.text
+
+
+def test_the_graph_page_renders_items_as_html_and_filters_them(client):
+    mission = create(client, kind="idea", title="mission", payload={"is_mission": True, "goal": "g"})
+    fact = create(
+        client,
+        kind="fact",
+        title="a titled fact",
+        question="?",
+        refs=[{"rel": "part_of", "to": mission["id"]}],
+    )
+    page = client.get(f"/missions/{mission['id']}/graph").text
+    assert 'class="gnode' in page
+    assert f'href="/items/{fact["id"]}"' in page  # every node is a normal link
+    assert "a titled fact" in page  # ... labelled with its title
+    assert "2 of 2 items" in page
+
+    filtered = client.get(f"/missions/{mission['id']}/graph?kind=idea").text
+    assert "a titled fact" not in filtered
+    assert "1 of 2 items" in filtered
+    # the filter form comes back ticked the way it was asked for
+    assert '<input type="checkbox" name="kind" value="idea" checked' in filtered
+
+    diagram = client.get(f"/missions/{mission['id']}/graph?view=mermaid").text
+    assert "graph LR" in diagram and 'class="gnode' not in diagram

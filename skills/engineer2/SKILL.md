@@ -106,5 +106,23 @@ Use `contradicts` when you find a conflict rather than silently picking a side.
 
 ## CAD work
 
-See `references/onshape.md` for the FeatureScript write path and
-`scripts/apply_featurescript.py` for pushing a `.fs` file into a document and evaluating it.
+See `references/onshape.md` for the FeatureScript write path. Two scripts do the mechanical parts:
+
+* `scripts/insert_feature.py` — **creating geometry.** Writing a Feature Studio only *defines* a
+  feature; this adds an instance of it to the end of a Part Studio's feature list, which is what
+  actually makes a solid. Use it whenever a mission needs a model built rather than measured.
+
+  ```bash
+  python scripts/insert_feature.py --url "$PS_URL" --list          # feature types and parameter ids
+  python scripts/insert_feature.py --url "$PS_URL" --file cube.fs --studio CubeFeature \
+      --feature-type agentCube --name "Base cube" --param side="50 mm"
+  ```
+
+  It exits non-zero if the feature does not regenerate, so check the exit code — a feature sitting
+  in the list with an error is not geometry.
+
+* `scripts/apply_featurescript.py` — **measuring geometry.** Pushes a `.fs` file into a Feature
+  Studio and evaluates it against the Part Studio, printing the decoded result.
+
+Build with the first, measure with the second, then register the measurement as a `cad_evaluation`
+so the number is reproduced rather than attested.

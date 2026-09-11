@@ -18,6 +18,7 @@ from fasthtml.common import (
     NotStr,
     P,
     Pre,
+    Script,
     Small,
     Span,
     Table,
@@ -244,3 +245,102 @@ def page_nav(active: str = ""):
 
 def banner(message: str, kind: str = "warn"):
     return Div(message, cls=f"banner {kind}")
+
+
+# --------------------------------------------------------------------------- html graph
+
+RETIRED = ("deprecated", "abandoned")
+
+
+def graph_node(node: dict[str, Any], focus: str | None = None):
+    """One item in the graph: an icon, the title as a link, and status in the left border."""
+    title = node["title"] or node["id"][:8]
+    tip = f"{title} — {node['kind']} · {node['status']} · {node['tier']}"
+    if node["human_confirmed"]:
+        tip += " · human-confirmed"
+    classes = ["gnode", f"st-{node['status']}", f"kind-{node['kind']}"]
+    if node["status"] in RETIRED:
+        classes.append("retired")
+    if node.get("is_mission"):
+        classes.append("mission")
+    if node["id"] == focus:
+        classes.append("focus")
+    return Div(
+        Span(KIND_ICON.get(node["kind"], "•"), cls="gicon", aria_hidden="true"),
+        A(title, href=f"/items/{node['id']}", cls="gtitle"),
+        Span("✓", cls="gconf", title="human-confirmed") if node["human_confirmed"] else "",
+        cls=" ".join(classes),
+        title=tip,
+        data_id=node["id"],
+    )
+
+
+def graph_view(layout: dict[str, Any], focus: str | None = None):
+    """The graph itself. Nodes are server-rendered and readable on their own; graph.js draws
+    the edges over them once, and dims everything else while a node is hovered."""
+    layers = layout["layers"]
+    if not layers:
+        return P("Nothing matches these filters.", cls="muted")
+    edges = [{"f": e["from"], "t": e["to"], "r": e["rel"]} for e in layout["edges"] if _safe_token(e["rel"])]
+    return Div(
+        Div(
+            NotStr('<svg class="gedges" aria-hidden="true"></svg>'),
+            Div(
+                *[Div(*[graph_node(n, focus) for n in layer], cls="glayer") for layer in layers],
+                cls="glayers",
+            ),
+            cls="gcanvas",
+        ),
+        Script(
+            json.dumps(edges, separators=(",", ":")).replace("</", "<\\/"),
+            type="application/json",
+            cls="gdata",
+        ),
+        cls="hgraph",
+    )
+
+
+def _safe_token(value: str) -> bool:
+    return bool(value) and all(c.isalnum() or c in "-_" for c in value)
+
+
+def graph_legend(statuses):
+    """Status is the only thing colour means here, so the legend is only statuses."""
+    return Div(
+        Small("status:", cls="muted"),
+        *[Span(s, cls=f"gkey st-{s}") for s in statuses],
+        Small("edges run downwards — an item sits above what it leans on.", cls="muted"),
+        cls="glegend",
+    )
+
+
+def graph_edge_table(index, edges: list[dict[str, Any]], limit: int = 250):
+    """Every edge as text: the reading that survives with JS off, and the precise one."""
+    if not edges:
+        return P("No references between these items.", cls="muted")
+    rows = sorted(edges, key=lambda e: (index.title(e["from"]).lower(), e["rel"]))
+    note = (
+        P(f"Showing {limit} of {len(rows)} references — narrow the filters to see the rest.", cls="muted")
+        if len(rows) > limit
+        else ""
+    )
+    rows = rows[:limit]
+    return Div(
+        note,
+        Table(
+            Thead(Tr(Th("from"), Th("rel"), Th("to"), Th("note"))),
+            Tbody(
+                *[
+                    Tr(
+                        Td(A(index.title(e["from"]), href=f"/items/{e['from']}")),
+                        Td(Span(e["rel"], cls="rel")),
+                        Td(A(index.title(e["to"]), href=f"/items/{e['to']}")),
+                        Td(Small(e.get("note", ""), cls="muted")),
+                        cls="contradicts" if e["rel"] == "contradicts" else None,
+                    )
+                    for e in rows
+                ]
+            ),
+            cls="edges",
+        ),
+    )

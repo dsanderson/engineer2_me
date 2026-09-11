@@ -12,6 +12,7 @@
 }
 
 body > main.container { max-width: 68rem; }
+body > main.container.wide { max-width: 92rem; }  /* the graph pages, which want the room */
 h1.brand { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
 nav a.active { font-weight: 600; text-decoration: underline; }
 section { margin-block: 2rem; }
@@ -93,9 +94,62 @@ pre.inline { display: inline; padding: .1rem .3rem; background: var(--pico-code-
 .field-error { color: var(--e2-failed); }
 .item-form textarea.mono { font-size: .85rem; }
 
+/* html graph --------------------------------------------------------- */
+.hgraph { border: 1px solid var(--pico-muted-border-color); border-radius: .5rem; padding: .7rem .8rem; overflow-x: auto; }
+.gcanvas { position: relative; }
+.gedges { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.glayers { position: relative; display: flex; flex-direction: column; gap: 1.1rem; }
+.glayer { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem .4rem; }
+.gnode {
+  position: relative; z-index: 1; display: inline-flex; align-items: baseline; gap: .3rem;
+  max-width: 16rem; padding: .1rem .45rem; font-size: .8rem; line-height: 1.4;
+  background: var(--pico-background-color); border: 1px solid var(--pico-muted-border-color);
+  border-left: 3px solid var(--e2-draft); border-radius: .25rem;
+}
+.gnode .gicon { color: var(--pico-muted-color); font-size: .75rem; }
+.gnode .gtitle { text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gnode .gconf { color: var(--e2-verified); font-size: .7rem; }
+.gnode.mission { border-width: 1px 1px 1px 3px; border-color: var(--pico-primary); border-left-color: var(--pico-primary); font-weight: 600; }
+.gnode.st-open { border-left-color: var(--e2-open); }
+.gnode.st-claimed { border-left-color: var(--e2-claimed); }
+.gnode.st-proposed { border-left-color: var(--e2-proposed); }
+.gnode.st-verified { border-left-color: var(--e2-verified); }
+.gnode.st-failed { border-left-color: var(--e2-failed); }
+.gnode.st-deprecated, .gnode.st-abandoned { border-left-color: var(--e2-retired); opacity: .55; }
+.gnode.me, .gnode.focus { outline: 2px solid var(--pico-primary); outline-offset: 1px; }
+.hgraph.focusing .gnode { opacity: .3; }
+.hgraph.focusing .gnode.me, .hgraph.focusing .gnode.on { opacity: 1; }
+
+.gedge { fill: none; stroke: var(--pico-muted-color); stroke-opacity: .3; stroke-width: 1.1px; }
+.gedge.rel-related, .gedge.rel-supports { stroke-dasharray: 3 3; }
+.gedge.rel-contradicts { stroke: var(--e2-failed); stroke-dasharray: 2 2; }
+.gedge.rel-supersedes { stroke-dasharray: 6 2; }
+.hgraph.focusing .gedge { stroke-opacity: .07; }
+.hgraph.focusing .gedge.on { stroke-opacity: 1; stroke: var(--pico-primary); stroke-width: 1.8px; }
+
+.glegend { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-bottom: .5rem; }
+.gkey { font-size: .7rem; padding: .05rem .4rem; border-radius: 1rem; color: #fff; }
+.gkey.st-draft { background: var(--e2-draft); }
+.gkey.st-open { background: var(--e2-open); }
+.gkey.st-claimed { background: var(--e2-claimed); }
+.gkey.st-proposed { background: var(--e2-proposed); }
+.gkey.st-verified { background: var(--e2-verified); }
+.gkey.st-failed { background: var(--e2-failed); }
+.gkey.st-deprecated, .gkey.st-abandoned { background: var(--e2-retired); }
+
+.gfilters { border: 1px solid var(--pico-muted-border-color); border-radius: .5rem; padding: .5rem .7rem; margin-bottom: .75rem; }
+.gfilters .gset { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .7rem; margin-bottom: .3rem; }
+.gfilters label { display: inline-flex; align-items: center; gap: .25rem; font-size: .8rem; margin: 0; }
+.gfilters input[type=checkbox] { margin: 0; }
+.gfilters button { width: auto; margin: 0; padding: .15rem .9rem; font-size: .8rem; }
+.gfilters .gset > small { min-width: 4rem; }
+.gviews { float: right; font-size: .8rem; }
+table.edges td, table.edges th { padding: .25rem .5rem; font-size: .85rem; }
+
 @media (prefers-color-scheme: dark) {
   .banner.warn { background: #3b2a10; color: #ffd8a8; }
   .banner.info { background: #10283b; color: #a8d8ff; }
   .banner.error { background: #3b1414; color: #ffb3b3; }
   .banner.retired { background: #222; color: #bbb; }
+  .gnode { background: var(--pico-card-background-color); }
 }

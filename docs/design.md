@@ -641,16 +641,25 @@ poller. Everything else is a plain form POST followed by a redirect, so every pa
 | `/` | Dashboard: missions with progress bars, the global open queue, recent events, counts by kind × status. |
 | `/items` | Filterable table: kind, status, tier, human-confirmed, tags, full-text `q`. Deprecated/abandoned hidden behind a toggle. |
 | `/items/{id}` | The main page. Header (kind badge, status pill, tier badge, confirm badge, claim state), rendered payload per kind, **outbound refs** and **backlinks** as two labelled lists, attachments, run history with pass/fail and diff table, revision list, action buttons. |
-| `/items/{id}/graph` | Neighbourhood graph, depth 2 by default. |
+| `/items/{id}/graph` | Neighbourhood graph, depth 2 by default, centred on the item. |
+| `/missions/{id}/graph` | The mission closure as a graph, filtered by kind and status. |
 | `/missions/{id}` | Goal, milestone checklist, the ordered open queue, full mission graph, activity. |
 | `/new/{kind}` | One form per kind, with the payload fields spelled out and inline help. |
 | `/items/{id}/edit` | Same form, prefilled; shows a diff against the current revision before saving. |
 | `/events` | Chronological feed. |
 | `/start.md`, `/skill.md` | Agent onboarding, served as markdown. |
+| `/skill.tar.gz` | The whole agent skill — SKILL.md, references, scripts — as a tarball, built from the running tree per request so an agent can install it unaided. |
 
-Graph rendering: emit Mermaid `graph LR` source server-side and let the client render it via mermaid from
-cdnjs, with a `<pre>` fallback showing the same source. Node shape encodes kind, colour encodes status, and
-every node links to its item. For >150 nodes, collapse to the `part_of` skeleton with expandable groups.
+Graph rendering: the default view is **HTML, not a picture**. Every node is an ordinary link carrying the
+item's title, a kind icon and its status in the left border, laid out in top-down layers — a mission above
+its members above what they lean on — with one barycentre pass to keep the crossings down. `graph.js` draws
+the reference edges over that as SVG curves and dims everything unrelated while a node is hovered or
+focused; following one line at a time is the only thing that makes a dense graph readable, and the layout
+is deliberately tight vertically at the cost of edges that are hard to trace unaided. With JS off the nodes
+and the "references as text" table below them still say everything. Kind and status filters are a plain GET
+form, so a filtered graph is a URL. The Mermaid `graph LR` diagram stays one click away (`?view=mermaid`)
+and is still what `GET /api/v1/missions/{id}/graph` returns; for >150 nodes it collapses to the `part_of`
+skeleton.
 
 The detail page is where the "less rigor, same structure" bet gets tested, so it must always answer four
 questions above the fold: **what is claimed, who claimed it, what checked it, and what breaks if it is wrong.**
@@ -715,7 +724,7 @@ engineer2_me/
     runner_client.py           # httpx client for the runner sidecar
     onshape.py                 # FS eval client + decode_fs
     events.py                  # events.jsonl append/tail
-    graph.py                   # closure + mermaid emitter
+    graph.py                   # closure + layering + mermaid emitter
     web/
       api.py                   # /api/v1 routes
       pages.py                 # HTML routes
