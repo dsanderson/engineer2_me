@@ -11,6 +11,8 @@ wheels/
 
 # engineer2.me data and secrets
 data/
+# kept data dirs from past test runs, for inspection
+archive/
 .env
 deploy/.env
 *.tgz

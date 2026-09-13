@@ -12,13 +12,19 @@ from typing import Any
 from fasthtml.common import (
     H1,
     A,
+    Button,
     Div,
+    Form,
+    Input,
+    Label,
     Li,
     Nav,
     NotStr,
+    Option,
     P,
     Pre,
     Script,
+    Select,
     Small,
     Span,
     Table,
@@ -252,6 +258,15 @@ def banner(message: str, kind: str = "warn"):
 RETIRED = ("deprecated", "abandoned")
 
 
+def _conf_tick(node: dict[str, Any]):
+    """The human-confirmed tick. Replay always renders the slot, hidden until the frame
+    that earns it — a node that never rendered one could not grow one as the slider ran."""
+    if node.get("replay"):
+        cls = "gconf" if node["human_confirmed"] else "gconf gconf-off"
+        return Span("✓", cls=cls, title="human-confirmed")
+    return Span("✓", cls="gconf", title="human-confirmed") if node["human_confirmed"] else ""
+
+
 def graph_node(node: dict[str, Any], focus: str | None = None):
     """One item in the graph: an icon, the title as a link, and status in the left border."""
     title = node["title"] or node["id"][:8]
@@ -263,12 +278,14 @@ def graph_node(node: dict[str, Any], focus: str | None = None):
         classes.append("retired")
     if node.get("is_mission"):
         classes.append("mission")
+    if node.get("absent"):
+        classes.append("gabsent")  # replay: it exists in the layout, not yet in the mission
     if node["id"] == focus:
         classes.append("focus")
     return Div(
         Span(KIND_ICON.get(node["kind"], "•"), cls="gicon", aria_hidden="true"),
         A(title, href=f"/items/{node['id']}", cls="gtitle"),
-        Span("✓", cls="gconf", title="human-confirmed") if node["human_confirmed"] else "",
+        _conf_tick(node),
         cls=" ".join(classes),
         title=tip,
         data_id=node["id"],
@@ -344,3 +361,135 @@ def graph_edge_table(index, edges: list[dict[str, Any]], limit: int = 250):
             cls="edges",
         ),
     )
+
+
+# --------------------------------------------------------------------------- replay
+
+REPLAY_COUNTS = ("verified", "proposed", "failed", "open", "claimed", "draft")
+
+
+def replay_caption(frame: dict[str, Any] | None, index, at: int, total: int):
+    """What happened at the frame under the slider.
+
+    Every part is always present, empty when there is nothing to say: replay.js writes into
+    these elements rather than rebuilding them, and a caption it had to rebuild once would
+    have lost the handles it needs the next time.
+    """
+    item = frame["item"] if frame else ""
+    return Div(
+        Small(frame["at"].replace("T", " ").rstrip("Z") if frame else "", cls="muted ts rts"),
+        " ",
+        Span(
+            frame["type"] if frame else "",
+            cls=f"badge ev ev-{frame['type']} rev" if frame else "badge ev rev",
+            hidden=not frame,
+        ),
+        " ",
+        A(
+            (index.title(item) or item[:8]) if frame else "",
+            href=f"/items/{item}" if frame else "#",
+            cls="rtitle",
+            hidden=not frame,
+        ),
+        " ",
+        Span(frame["label"] if frame else "before anything happened", cls="rlabel"),
+        " ",
+        Small(f"by {frame['by']}" if frame and frame.get("by") else "", cls="muted rby"),
+        cls="rcap" + (" moved" if frame and frame.get("status") else ""),
+        data_at=str(at),
+        data_total=str(total),
+    )
+
+
+def replay_counts(counts: dict[str, int]):
+    """A running tally, so the slider says how far along the mission is, not just when."""
+    return Div(
+        Span(Span(str(counts.get("items", 0)), cls="rnum", data_count="items"), " items", cls="rcount"),
+        *[
+            Span(
+                Span(str(counts.get(st, 0)), cls="rnum", data_count=st),
+                " ",
+                st,
+                cls=f"rcount rc-{st}",
+            )
+            for st in REPLAY_COUNTS
+        ],
+        cls="rcounts",
+    )
+
+
+def replay_controls(action: str, at: int, total: int):
+    """A GET form, so the slider still works with JS off: drag, then press go."""
+    steps = [
+        ("⏮", 0, "start", "start"),
+        ("◀", max(0, at - 1), "step back", "prev"),
+        ("▶", min(total, at + 1), "step forward", "next"),
+        ("⏭", total, "end", "end"),
+    ]
+    return Form(
+        Div(
+            *[
+                A(
+                    glyph,
+                    href=f"{action}?at={target}",
+                    cls="rstep",
+                    title=title,
+                    data_role=role,
+                )
+                for glyph, target, title, role in steps
+            ],
+            Button("play", type="button", cls="rplay", hidden=True),
+            Select(
+                *[
+                    Option(label, value=str(ms), selected=(ms == 220))
+                    for label, ms in (("slow", 600), ("medium", 220), ("fast", 70))
+                ],
+                cls="rspeed",
+                hidden=True,
+                aria_label="replay speed",
+            ),
+            Label(
+                Input(type="checkbox", cls="ronly", role="switch"),
+                Small("status changes only"),
+                cls="ronly-label",
+                hidden=True,
+            ),
+            cls="rbuttons",
+        ),
+        Input(
+            type="range",
+            name="at",
+            min="0",
+            max=str(total),
+            value=str(at),
+            step="1",
+            cls="rrange",
+            aria_label="replay position",
+        ),
+        Div(
+            Small(f"event {at} of {total}", cls="muted rpos"),
+            Button("go", type="submit", cls="rgo"),
+            cls="rfoot",
+        ),
+        method="get",
+        action=action,
+        cls="rcontrols",
+    )
+
+
+def replay_tail(frames: list[dict[str, Any]], index, limit: int = 10):
+    """The handful of events leading up to the cursor — the replay's own activity feed."""
+    rows = [
+        Li(
+            Small(f["at"].replace("T", " ").rstrip("Z"), cls="muted ts"),
+            " ",
+            Span(f["type"], cls=f"badge ev ev-{f['type']}"),
+            " ",
+            A(index.title(f["item"]) or f["item"][:8], href=f"/items/{f['item']}"),
+            " ",
+            Small(f["label"], cls="muted detail"),
+            cls="rmoved" if f.get("status") else None,
+        )
+        for f in frames[-limit:][::-1]
+    ]
+    return Ul(*rows, cls="events rtail")

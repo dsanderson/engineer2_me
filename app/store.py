@@ -136,7 +136,9 @@ class Store:
             raise ValidationError(errors)
         atomic_write(self.item_path(item.id), dumps(item.to_json()))
         atomic_write(self.revisions_dir(item.id) / f"{item.rev:04d}.json", dumps(item.to_json()))
-        self.events.append("created", item.id, actor.name, kind=item.kind, title=item.title)
+        self.events.append(
+            "created", item.id, actor.name, kind=item.kind, title=item.title, status=item.status
+        )
         return item
 
     def write(self, item: Item, by: Actor, event: str = "updated", **detail: Any) -> Item:

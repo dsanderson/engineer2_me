@@ -11,7 +11,7 @@ uv sync --extra dev
 make runner   # sandbox on :8001 (calculations need it; everything else works without it)
 make dev      # app on :8000
 make seed     # build the worked example from docs/design.md §10 against a running app
-make test     # 85 tests; ones needing the sandbox start it themselves
+make test     # 120 tests; ones needing the sandbox start it themselves
 make lint     # ruff check + format --check — run before committing
 ```
 
@@ -26,6 +26,7 @@ app/index.py     in-memory index: summaries, backlinks, search, stats
 app/service.py   Platform: the operations. Both api.py and pages.py call into this and hold no rules
 app/verify.py    run orchestration + invalidation. The run record is the product
 app/graph.py     mission closure, the open queue, progress, graph layering, mermaid
+app/replay.py    the event log folded back into the states it produced, for the mission replay
 app/web/         api.py (JSON), pages.py (HTML), components.py, forms.py, app.py (builder)
 runner/          the sandbox sidecar; bootstrap.py runs inside the forked child
 ```
@@ -55,6 +56,13 @@ handler, it belongs in one of those two instead.
   cascade happens as each stale item is itself re-verified. Cycles are legal; the walk is cycle-safe.
 * **References live on the source item; backlinks are derived** by the index and never stored.
 * `index.json` is a cache. Deleting it must always be safe (`make reindex`).
+
+* The mission **replay** reconstructs past state from `events.jsonl`, not from the revisions on disk:
+  the log is already ordered and it is one read. `_next_status` in `replay.py` is the one place that
+  has to stay in step with `service.py` — a claim, a confirmation or a payload edit moves status as a
+  *side effect*, without a `status` event of its own. Creation status comes off the `created` event
+  (or revision 1 for items written before that field existed): the `previous` on an item's first
+  `status` event is *not* its creation status if a claim happened in between.
 
 ## Conventions
 
@@ -101,5 +109,5 @@ handler, it belongs in one of those two instead.
 `tests/test_models.py` (envelope/validation/transitions), `test_store.py` (atomicity, revisions,
 index), `test_refs_compare.py` (`$ref` provenance, tolerances, units), `test_verify.py` (runs against a
 real sandbox subprocess, plus the invalidation cascade), `test_onshape.py` (FS decoding, mocked
-transport), `test_graph.py` (closure, queue ordering, progress), `test_api.py` (the HTTP surface and
-that every page renders).
+transport), `test_graph.py` (closure, queue ordering, progress), `test_replay.py` (reconstructing
+past states from the event log), `test_api.py` (the HTTP surface and that every page renders).

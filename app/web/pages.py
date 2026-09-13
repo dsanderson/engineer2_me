@@ -54,6 +54,7 @@ from app.graph import (
 )
 from app.models import KINDS, REF_RELS, STATUSES, Actor
 from app.onshape import model_url
+from app.replay import apply_state, edge_key, state_at, timeline, visible_edges, wire
 from app.service import Platform
 from app.store import NotFound
 from app.web.components import (
@@ -75,6 +76,10 @@ from app.web.components import (
     progress_bar,
     refs_in_list,
     refs_out_list,
+    replay_caption,
+    replay_controls,
+    replay_counts,
+    replay_tail,
     status_pill,
     tier_badge,
     verdict_badge,
@@ -610,9 +615,12 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
             ),
         )
 
-    def _html_graph(layout: dict[str, Any], focus: str | None = None):
+    def _html_graph(layout: dict[str, Any], focus: str | None = None, full_legend: bool = False):
+        """`full_legend` is for the replay, where the slider changes which statuses are on
+        screen client-side and a legend of only the ones rendered here would go stale."""
         present = [st for st in STATUSES if any(n["status"] == st for lay in layout["layers"] for n in lay)]
-        return Div(graph_legend(present), graph_view(layout, focus), Script(src="/static/graph.js"))
+        legend = list(STATUSES) if full_legend else present
+        return Div(graph_legend(legend), graph_view(layout, focus), Script(src="/static/graph.js"))
 
     def _graph_section(
         ids: set[str],
@@ -749,7 +757,11 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
             ),
             Section(
                 H2(f"Graph ({len(ids)} items)"),
-                P(A("filter, or see it as a diagram →", href=f"/missions/{id}/graph")),
+                P(
+                    A("filter, or see it as a diagram →", href=f"/missions/{id}/graph"),
+                    " · ",
+                    A("replay how it got here →", href=f"/missions/{id}/replay"),
+                ),
                 _html_graph(layered(index, ids, id)),
             ),
             Section(
@@ -779,6 +791,59 @@ def register_pages(app, platform: Platform) -> None:  # noqa: C901 - a route tab
             f"{item.title} — graph",
             P(A("← back to mission", href=f"/missions/{id}")),
             _graph_section(ids, f"/missions/{id}/graph", req.query_params, root=id),
+            active="missions",
+            wide=True,
+        )
+
+    @app.get("/missions/{id}/replay")
+    def mission_replay(id: str, at: int = -1):
+        """The mission as it was built: one frame per event, the graph in its final shape.
+
+        Positions are computed once from the finished mission so nothing moves under the
+        slider — only status, confirmation and which items exist yet change as it runs.
+        """
+        item = store.get(id)
+        ids = mission_closure(index, id)
+        line = timeline(events.all(), ids, index, store)
+        total = len(line["frames"])
+        cursor = total if at < 0 else max(0, min(at, total))
+        state = state_at(line, cursor)
+        frame = state["frame"]
+        layout = layered(index, ids, id)
+        announced = set(line["announced"])
+        drawn = visible_edges(state, announced, layout["edges"])
+        action = f"/missions/{id}/replay"
+        return shell(
+            f"{item.title} — replay",
+            P(
+                A("← back to mission", href=f"/missions/{id}"),
+                " · ",
+                Small(f"{total} events over {len(ids)} items", cls="muted"),
+            ),
+            Div(
+                replay_controls(action, cursor, total),
+                replay_caption(frame, index, cursor, total),
+                replay_counts(state["counts"]),
+                _html_graph(
+                    apply_state(layout, state),
+                    focus=frame["item"] if frame else None,
+                    full_legend=True,
+                ),
+                Details(
+                    Summary("references at this point"),
+                    graph_edge_table(
+                        index, [e for e in layout["edges"] if edge_key(e["from"], e["to"]) in drawn]
+                    ),
+                ),
+                Section(H2("Leading up to here"), replay_tail(line["frames"][:cursor], index)),
+                Script(
+                    json.dumps(wire(line), separators=(",", ":")).replace("</", "<\\/"),
+                    type="application/json",
+                    cls="rdata",
+                ),
+                Script(src="/static/replay.js"),
+                cls="replay",
+            ),
             active="missions",
             wide=True,
         )
